@@ -1,0 +1,256 @@
+---
+title: "project"
+author: "Tianhe Wang"
+date: "12/6/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+```{r}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(corrplot)
+```
+```{r}
+projectfolder <- "Forest_Fire"
+```
+
+```{r}
+mainDir <- getwd()
+dir.create(file.path(mainDir,projectfolder), showWarnings = FALSE)
+setwd(paste(mainDir,projectfolder, sep="/"))
+```
+
+```{r}
+destfile <- paste(getwd(),"forestfires.csv", sep="/")
+if(!file.exists("forestfires.csv")){
+  download.file(url="https://archive.ics.uci.edu/ml/machine-learning-databases/forest-fires/forestfires.csv",destfile)}
+```
+
+#import data into R
+```{r}
+ff_data <- read.csv(destfile, header = TRUE, sep = ",",stringsAsFactors=FALSE)
+origdata <- ff_data
+```
+
+#check the number of cases and names of variables
+```{r}
+dim(ff_data)
+colnames(ff_data)
+```
+
+#check if there is any missing values and any area of 0
+```{r}
+sum(is.na(ff_data))
+length(which(ff_data$area==0))
+```
+
+#turn month and day into numerical values
+
+
+
+```{r}
+day <- factor(ff_data$day, levels = c("mon", "tue", "wed", "thu", "fri", "sat", "sun" ), ordered = TRUE)
+ff_data$day = as.integer(day)
+mon <- factor(ff_data$month, levels = c("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), ordered = TRUE)
+ff_data$month = as.integer(mon)
+```
+
+
+```{r}
+lmod <- lm(area ~ ., ff_data)
+summary(lmod)
+```
+
+
+
+```{r}
+require(faraway)
+vif(lmod)
+```
+```{r}
+plot(ff_data$rain,residuals(lmod),xlab="rain",ylab="Residuals")
+abline(h = 0)
+plot(ff_data$FFMC,residuals(lmod),xlab="FFMC",ylab="Residuals")
+abline(h = 0)
+```
+#eliminate variable rain because it violates constant variance assumption
+```{r}
+ff_data <- ff_data[, -which(colnames(ff_data) == "rain")]
+lmod <- lm(area ~ ., ff_data)
+summary(lmod)
+```
+
+#we do the transformation on variable FFMC
+```{r}
+ff_data$FFMC <- ff_data$FFMC^3
+plot(ff_data$FFMC,residuals(lmod),xlab="FFMC",ylab="Residuals")
+abline(h = 0)
+lmod <- lm(area ~ ., ff_data)
+summary(lmod)
+```
+
+#Use boxcox test to see if further transformation need on response variable.
+```{r}
+require(MASS)
+lmod <- lm(area ~ ., ff_data)
+ff_data1 <- data.frame(ff_data)
+ff_data1$area <- ff_data1$area + 1
+head(ff_data1)
+lmod1 <- lm(area ~ . , ff_data1)
+boxcox(lmod1, plotit = TRUE)
+```
+
+```{r}
+ff_data2 <- data.frame(ff_data)
+ff_data2 <- filter(ff_data2, area != 0)
+lmod2 <- lm(area ~. , ff_data2)
+boxcox(lmod2, plotit = TRUE)
+```
+
+```{r}
+lmod <- lm(area ~ ., ff_data)
+ff_data1 <- data.frame(ff_data)
+ff_data1$area <- ff_data1$area + 1
+ff_data4 <- ff_data1
+#ff_data1 <- filter(ff_data1, area != 0)
+#ff_data1$area <- sqrt(ff_data1$area)
+ff_data4$area <- log(ff_data1$area+1)
+#ff_data1$area <- 1/(ff_data1$area)
+#ff_data1$area <- ff_data1$area^(1/3)
+lmod3 <- lm(area ~ . , ff_data4)
+boxcox(lmod3, plotit = TRUE)
+ff_data1$area <- log(ff_data1$area)
+```
+
+#density test
+```{r}
+par(mfrow=c(1,2),mar=c(5, 4.25, 5.5, 2))
+  d <- density(ff_data1$area)
+  plot(d,main="Area Burned Density (original)",xlab="Area Burned (Hec)", col='tomato', lwd=3)
+  d <- density(log(ff_data$area+1))
+  plot(d,main="Area Burned Density (log(x+1))",xlab="Area Burned (Hec)", col='tomato', lwd=3)
+```
+```{r}
+ff_data <- filter(ff_data, area != 0)
+ff_data$area <- 1/sqrt(ff_data$area)
+```
+
+
+```{r}
+#ff_data <- filter(ff_data, area != 0)
+"ff_data$area <- 1/sqrt(ff_data$area+1)
+lmod <- lm(area ~ ., ff_data)
+boxcox(lmod, plotit = TRUE)"
+```
+
+#From the result, it seems we better delete all the area==0 data. 
+
+#visualizing variable relationship
+```{r}
+ff_cor <- cor(ff_data)
+corrplot(ff_cor, method="color", outline = TRUE,order = "hclust",
+         tl.col="black", tl.srt=45, diag=FALSE,tl.cex = 1,mar=c(0,0,3,0),
+         title="Correlation  between Predictors and response")
+```
+
+
+```{r}
+library(lmtest)
+lmod3 <- lm(area ~ ., ff_data1)
+lmtest::bptest(lmod3)
+par(mfrow=c(2,2))
+plot(lmod3)
+#plot(fitted(lmod), residuals(lmod), xlab = "fitted", ylab = "residuals")
+#abline(h = 0)
+#qqnorm(ff_data$area)
+#qqline(ff_data$area, col = "red")
+```
+
+
+#check normality
+```{r}
+assumptionsmodel_all <- lm(area ~ ., data=ff_data1)
+assumptionsmodel_0 <- lm(area ~ .,data=ff_data1[which(ff_data1$area>0),])
+# Remove all cases with an area burned of 0
+ff_data1 <- ff_data1[which(ff_data1$area>0),]
+# Plots both with and without 0 residuals
+par(mfrow=c(1,2))
+hist(assumptionsmodel_all$residuals, main = "Data with 0 area burned", xlab = 'Residuals')
+abline(v=mean(assumptionsmodel_all$residuals), col='red', lwd=2)
+hist(assumptionsmodel_0$residuals,main = "Data without 0 area burned", xlab = 'Residuals')
+abline(v=mean(assumptionsmodel_0$residuals), col='red', lwd=2)
+```
+
+```{r}
+#hist(lmod3$residuals, main = "hist of res", xlab = "Residuals")
+#abline(v = mean(lmod3$residuals), col = "red", lwd = 2)
+```
+
+#remove influntial points
+```{r}
+require(car)
+lmod <- lm(area ~ ., ff_data1)
+cook <- cooks.distance(lmod)
+halfnorm(cook, 10, col = "red")
+influencePlot(lmod,id.n=5)
+```
+
+```{r}
+ff_data <- ff_data[-which(row.names(ff_data) %in% c(105,122,62)),]
+ff_data1 <- ff_data1[-which(row.names(ff_data) %in% c(200, 239, 274, 416, 480)),]
+```
+```{r}
+summary(lmod)
+```
+
+
+#model selection
+
+
+
+```{r}
+out.full = lm(area ~ ., ff_data1)
+out.backward = step(out.full,scope=list(lower=~1,upper=out.full), direction="backward",trace=FALSE,k=log(267))
+out.backward$coefficients
+```
+
+```{r}
+require(leaps)
+b <- regsubsets(area ~ ., data = ff_data1)
+rs <- summary(b)
+rs$which
+```
+
+```{r}
+AIC <- 268*log(rs$rss/268)+ (2:12)*2
+plot(AIC ~ I(1:11), ylab="AIC", xlab="Number of Predictors")
+```
+
+```{r}
+plot(rs$adjr2)
+```
+
+
+```{r}
+library(DAAG)
+lmodfinal <- lm(area ~ month+day+DMC+DC+ISI+RH, ff_data1)
+summary(lmodfinal)
+#cv_final<-cv.lm(data=ff_data1, lmodfinal, m=3)
+
+```
+
+#shrinkage rule ridge regression
+```{r}
+plot(lmodfinal)
+```
+
